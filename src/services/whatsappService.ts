@@ -19,6 +19,7 @@ import { AuthKey } from '../models/AuthKey';
 import { env } from '../config/env';
 import QRCode from 'qrcode';
 import pino from 'pino';
+import { sessionStore } from './sessionStore'
 
 // Logger for Baileys (set to silent in production)
 const logger = pino({ level: env.isDev ? 'debug' : 'silent' });
@@ -140,6 +141,10 @@ export async function createSession(
       },
     });
 
+    sessionStore.set(sessionId, {
+      webhookUrl: session.webhook_url
+    });
+
     // If session existed but we are restarting it, update webhook if provided
     if (!created && webhookUrl) {
       session.webhook_url = webhookUrl;
@@ -203,9 +208,12 @@ export async function createSession(
                      msg.message?.stickerMessage),
       }));
 
+
+      const runtime = sessionStore.get(sessionId)
+
       // Send webhook if configured
-      if (session.webhook_url) {
-        await sendWebhook(session.webhook_url, {
+      if (runtime?.webhookUrl) {
+        await sendWebhook(runtime?.webhookUrl, {
           event: 'message.received',
           sessionId,
           timestamp: new Date().toISOString(),
@@ -227,9 +235,11 @@ export async function createSession(
         statusCode: update.update?.status ?? undefined,
       }));
 
+      const runtime = sessionStore.get(sessionId);
+
       // Send webhook if configured
-      if (session.webhook_url) {
-        await sendWebhook(session.webhook_url, {
+      if (runtime?.webhookUrl) {
+        await sendWebhook(runtime?.webhookUrl, {
           event: 'message.status',
           sessionId,
           timestamp: new Date().toISOString(),
@@ -240,8 +250,11 @@ export async function createSession(
 
     // Handle presence updates (online/offline, typing)
     socket.ev.on('presence.update', async (presence) => {
-      if (session.webhook_url) {
-        await sendWebhook(session.webhook_url, {
+      const runtime = sessionStore.get(sessionId)
+
+      // Send webhook if configured
+      if (runtime?.webhookUrl) {
+        await sendWebhook(runtime?.webhookUrl, {
           event: 'presence.update',
           sessionId,
           timestamp: new Date().toISOString(),

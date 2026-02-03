@@ -32,6 +32,11 @@ export const env = {
     reconnectInterval: parseInt(process.env.WA_RECONNECT_INTERVAL || '5000', 10),
     maxReconnectRetries: parseInt(process.env.WA_MAX_RECONNECT_RETRIES || '5', 10),
   },
+
+  admin: {
+    username: process.env.ADMIN_USERNAME,
+    password: process.env.ADMIN_PASSWORD
+  },
 } as const;
 
 // Validate required environment variables

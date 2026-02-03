@@ -167,16 +167,16 @@ async function seedDatabase(): Promise<void> {
 
     if (userCount === 0) {
       const adminUser = await User.create({
-        username: 'admin',
-        password: 'admin123', // Will be hashed by model hook
+        username: env.admin.username,
+        password: env.admin.password, // Will be hashed by model hook
         role: 'admin', // Set as admin
       });
 
       console.log('='.repeat(60));
       console.log('🔐 INITIAL ADMIN USER CREATED');
       console.log('='.repeat(60));
-      console.log(`Username: admin`);
-      console.log(`Password: admin123`);
+      console.log(`Username: ${adminUser.username}`);
+      console.log(`Password: ${adminUser.password}`);
       console.log(`Role:     admin`);
       console.log(`API Key:  ${adminUser.api_key}`);
       console.log('='.repeat(60));

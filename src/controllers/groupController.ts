@@ -23,6 +23,7 @@ interface SendToGroupBody {
     filename?: string;
     mimetype?: string;
   }>;
+  mentions?: Array<string>;
 }
 
 interface BroadcastBody {
@@ -129,7 +130,7 @@ export async function sendToGroupHandler(
 ): Promise<void> {
   try {
     const { sessionId } = request.params;
-    const { groupId, message, media } = request.body;
+    const { groupId, message, media, mentions } = request.body;
     const user = request.user!;
 
     if (!groupId) {
@@ -153,9 +154,23 @@ export async function sendToGroupHandler(
     const results: Array<{ type: string; messageId?: string }> = [];
 
     if (message) {
-      const textResult = await socket.sendMessage(jid, { text: message });
-      results.push({ type: 'text', messageId: textResult?.key?.id ?? undefined });
+      let textResult = null;
+
+      if (mentions && mentions.length > 0) {
+        textResult = await socket.sendMessage(jid, {
+          text: message,
+          mentions: mentions, // pass mentions here
+        });
+      } else {
+        textResult = await socket.sendMessage(jid, { text: message });
+      }
+
+      results.push({
+        type: 'text',
+        messageId: textResult?.key?.id ?? undefined,
+      });
     }
+
 
     if (media && media.length > 0) {
       for (const item of media) {
@@ -378,10 +393,11 @@ export async function getGroupInfoHandler(
         owner: metadata.owner,
         creation: metadata.creation,
         desc: metadata.desc || null,
-        participants: metadata.participants.map((p) => ({
-          id: p.id,
-          admin: p.admin || null,
-        })),
+        // participants: metadata.participants.map((p) => ({
+        //   id: p.id,
+        //   admin: p.admin || null,
+        // })),
+        participants: metadata.participants,
       },
     });
   } catch (error) {

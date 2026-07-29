@@ -11,8 +11,11 @@ import makeWASocket, {
   ConnectionState,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
+  isJidGroup,
   jidDecode,
   jidNormalizedUser,
+  normalizeMessageContent,
+  toNumber,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { useSequelizeAuthState } from '../lib/whatsappAuth';
@@ -237,22 +240,37 @@ export async function createSession(
     // Handle incoming messages
     socket.ev.on('messages.upsert', async (m) => {
       // Format messages for webhook
-      const messages = m.messages.map((msg) => ({
-        id: msg.key.id,
-        from: msg.key.remoteJid,
-        fromMe: msg.key.fromMe,
-        timestamp: msg.messageTimestamp,
-        type: getMessageType(msg.message),
-        text: msg.message?.conversation || 
-              msg.message?.extendedTextMessage?.text ||
-              msg.message?.imageMessage?.caption ||
-              msg.message?.videoMessage?.caption ||
-              msg.message?.documentMessage?.caption || null,
-        pushName: msg.pushName,
-        hasMedia: !!(msg.message?.imageMessage || msg.message?.videoMessage || 
-                     msg.message?.audioMessage || msg.message?.documentMessage ||
-                     msg.message?.stickerMessage),
-      }));
+      const messages = m.messages.map((msg) => {
+        const content = normalizeMessageContent(msg.message);
+        const chatType = isJidGroup(msg.key.remoteJid || undefined) ? 'group' : 'personal';
+        const contextInfo =
+          content?.extendedTextMessage?.contextInfo ||
+          content?.imageMessage?.contextInfo ||
+          content?.videoMessage?.contextInfo ||
+          content?.documentMessage?.contextInfo;
+        const mentionedJids = (contextInfo?.mentionedJid || []).filter(
+          (jid): jid is string => typeof jid === 'string'
+        );
+
+        return {
+          id: msg.key.id,
+          from: msg.key.remoteJid,
+          fromMe: msg.key.fromMe,
+          timestamp: toNumber(msg.messageTimestamp),
+          chatType,
+          ...(chatType === 'group' ? { mentionedJids } : {}),
+          type: getMessageType(content),
+          text: content?.conversation ||
+                content?.extendedTextMessage?.text ||
+                content?.imageMessage?.caption ||
+                content?.videoMessage?.caption ||
+                content?.documentMessage?.caption || null,
+          pushName: msg.pushName,
+          hasMedia: !!(content?.imageMessage || content?.videoMessage ||
+                       content?.audioMessage || content?.documentMessage ||
+                       content?.stickerMessage),
+        };
+      });
 
 
       const runtime = sessionStore.get(sessionId)

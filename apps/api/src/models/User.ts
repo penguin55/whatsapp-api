@@ -10,7 +10,7 @@ import {
   BeforeUpdate,
   BeforeValidate,
 } from 'sequelize-typescript';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Session } from './Session';
 

@@ -1,37 +1,32 @@
-# ---------- Stage 1: Build ----------
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY tsconfig.json ./
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/dashboard/package.json ./apps/dashboard/package.json
+RUN npm ci
 
-# Install ALL deps (including devDependencies)
-RUN npm install
-
-# Copy source code
-COPY . .
-
-# Build TypeScript → dist/
+COPY apps ./apps
 RUN npm run build
 
+FROM node:20-alpine AS production
 
-# ---------- Stage 2: Production ----------
-FROM node:20-alpine
-
+ENV NODE_ENV=production
 WORKDIR /app
 
-# Copy only production package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/dashboard/package.json ./apps/dashboard/package.json
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install ONLY production deps
-RUN npm install --omit=dev
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/public ./apps/api/public
 
-# Copy built app from builder stage
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app .
-
+USER node
 EXPOSE 3000
 
-CMD ["npm", "start"]
-# CMD ["node", "dist/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1
+
+CMD ["node", "apps/api/dist/app.js"]

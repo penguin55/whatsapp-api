@@ -2,7 +2,7 @@
  * Sequelize Auth State Adapter for Baileys
  * 
  * This is the core of the system - it replaces file-based auth storage
- * with MySQL database storage via Sequelize.
+ * with PostgreSQL database storage via Sequelize.
  * 
  * How it works:
  * 1. On init: Load all auth keys from database for the session

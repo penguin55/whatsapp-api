@@ -10,14 +10,22 @@ import { Session } from '../models/Session';
 import { AuthKey } from '../models/AuthKey';
 import { ScheduledMessage } from '../models/ScheduledMessage';
 
-// Create Sequelize instance with MySQL
+// Create Sequelize instance with PostgreSQL
 export const sequelize = new Sequelize({
-  dialect: 'mysql',
+  dialect: 'postgres',
   host: env.db.host,
   port: env.db.port,
   database: env.db.name,
   username: env.db.user,
   password: env.db.password,
+  dialectOptions: env.db.ssl
+    ? {
+        ssl: {
+          require: true,
+          rejectUnauthorized: env.db.sslRejectUnauthorized,
+        },
+      }
+    : undefined,
 
   // Register models explicitly
   models: [User, Session, AuthKey, ScheduledMessage],
@@ -33,9 +41,6 @@ export const sequelize = new Sequelize({
     idle: 10000,
   },
 
-  // Timezone configuration
-  timezone: '+07:00',
-
   // Additional options
   define: {
     timestamps: true,
@@ -49,22 +54,20 @@ export const sequelize = new Sequelize({
  */
 export async function initDatabase(): Promise<void> {
   try {
-    // Test connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
-
-    // Sync all models (create tables if not exist)
-    // In production, use migrations instead
-    if (env.isDev) {
-      // Disabled alter to prevent ER_TOO_MANY_KEYS loop
-      await sequelize.sync({ alter: false });
-      console.log('✅ Database models synchronized.');
-    } else {
-      await sequelize.sync();
-      console.log('✅ Database models synchronized (production mode).');
-    }
   } catch (error) {
     console.error('❌ Unable to connect to the database:', error);
+    throw error;
+  }
+
+  try {
+    // Create missing tables and indexes without altering existing columns.
+    // Use migrations for intentional schema changes.
+    await sequelize.sync({ alter: false });
+    console.log('✅ Database models synchronized.');
+  } catch (error) {
+    console.error('❌ Unable to synchronize database models:', error);
     throw error;
   }
 }

@@ -30,13 +30,6 @@ export enum SessionStatus {
 @Table({
   tableName: 'sessions',
   timestamps: true,
-  indexes: [
-    {
-      name: 'idx_session_id',
-      fields: ['session_id'],
-      unique: true,
-    },
-  ],
 })
 export class Session extends Model {
   @PrimaryKey

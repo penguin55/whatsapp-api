@@ -23,11 +23,11 @@ import {
   timestamps: true,
   indexes: [
     {
-      name: 'idx_session_id',
+      name: 'auth_keys_session_id_idx',
       fields: ['session_id'],
     },
     {
-      name: 'idx_session_type',
+      name: 'auth_keys_session_type_uidx',
       fields: ['session_id', 'type'],
       unique: true,
     },
@@ -54,7 +54,7 @@ export class AuthKey extends Model {
   declare type: string;
 
   /**
-   * CRITICAL: Use LONGTEXT for MySQL
+   * PostgreSQL TEXT stores the serialized authentication payload.
    * Baileys credentials can be very large, especially:
    * - creds.json: Contains keys, identities, etc
    * - app-state-sync-key-*: Can be megabytes in size
@@ -65,7 +65,7 @@ export class AuthKey extends Model {
    * - Session corruption
    */
   @Column({
-    type: DataType.TEXT('long'), // MySQL LONGTEXT (4GB limit)
+    type: DataType.TEXT,
     allowNull: false,
     comment: 'JSON-serialized auth data with Buffer support',
   })

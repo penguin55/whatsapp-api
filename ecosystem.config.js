@@ -9,7 +9,7 @@ module.exports = {
   apps: [
     {
       name: 'whatsapp-api',
-      script: 'dist/app.js',
+      script: 'apps/api/dist/app.js',
       
       // Instance configuration
       instances: 1, // Single instance to maintain WebSocket connections

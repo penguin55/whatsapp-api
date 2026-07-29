@@ -73,7 +73,7 @@ export class ScheduledMessage extends Model {
   declare message: string;
 
   @Column({
-    type: DataType.TEXT('long'),
+    type: DataType.TEXT,
     allowNull: true,
     comment: 'JSON array of media items',
   })

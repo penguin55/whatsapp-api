@@ -7,6 +7,11 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { User } from '../models/User';
 import { AuthSchemas } from '../config/routeSchemas';
+import {
+  clearDashboardSessionCookie,
+  createDashboardSession,
+  readDashboardSession,
+} from '../lib/dashboardAuth';
 
 // Request body types
 interface RegisterBody {
@@ -167,6 +172,88 @@ async function loginHandler(
 }
 
 /**
+ * Browser-only login. The permanent API key is never returned to JavaScript.
+ */
+async function dashboardLoginHandler(
+  request: FastifyRequest<{ Body: LoginBody }>,
+  reply: FastifyReply
+): Promise<void> {
+  const { username, password } = request.body || {};
+  if (!username || !password) {
+    reply.status(400).send({
+      success: false,
+      error: 'Username and password are required',
+    });
+    return;
+  }
+  const user = await User.findOne({ where: { username, is_active: true } });
+
+  if (!user || !(await user.verifyPassword(password))) {
+    reply.status(401).send({
+      success: false,
+      error: 'Invalid username or password',
+    });
+    return;
+  }
+
+  user.last_login = new Date();
+  await user.save();
+
+  const session = createDashboardSession(user.id);
+  reply.header('Set-Cookie', session.cookie).send({
+    success: true,
+    data: {
+      username: user.username,
+      csrf_token: session.csrfToken,
+    },
+  });
+}
+
+async function dashboardSessionHandler(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const session = readDashboardSession(request.headers.cookie);
+  if (!session) {
+    reply.status(401).send({ success: false, error: 'Session expired' });
+    return;
+  }
+
+  const user = await User.findOne({
+    where: { id: session.userId, is_active: true },
+    attributes: ['id', 'username'],
+  });
+  if (!user) {
+    reply.status(401).send({ success: false, error: 'Session expired' });
+    return;
+  }
+
+  reply.send({
+    success: true,
+    data: {
+      username: user.username,
+      csrf_token: session.csrf,
+    },
+  });
+}
+
+async function dashboardLogoutHandler(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const session = readDashboardSession(request.headers.cookie);
+  const csrfToken = request.headers['x-csrf-token'];
+  if (!session || typeof csrfToken !== 'string' || csrfToken !== session.csrf) {
+    reply.status(403).send({ success: false, error: 'Invalid CSRF token' });
+    return;
+  }
+
+  reply
+    .header('Set-Cookie', clearDashboardSessionCookie())
+    .send({ success: true, message: 'Logged out' });
+}
+
+/**
  * Register auth routes (PUBLIC - no authentication)
  */
 export async function authRoutes(
@@ -178,6 +265,18 @@ export async function authRoutes(
 
   // Login
   fastify.post('/auth/login', { schema: AuthSchemas.login }, loginHandler);
+
+  // Browser dashboard authentication (HttpOnly cookie; no API key exposure).
+  fastify.post('/auth/dashboard/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+      },
+    },
+  }, dashboardLoginHandler);
+  fastify.get('/auth/dashboard/session', dashboardSessionHandler);
+  fastify.post('/auth/dashboard/logout', dashboardLogoutHandler);
 }
 
 export default authRoutes;

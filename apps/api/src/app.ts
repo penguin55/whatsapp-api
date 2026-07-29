@@ -20,6 +20,8 @@ import { authRoutes } from './routes/authRoutes';
 import { restoreAllSessions, closeAllSessions } from './services/whatsappService';
 import { startScheduler, stopScheduler } from './services/schedulerService';
 import { User } from './models/User';
+import { readFile } from 'fs/promises';
+import path from 'path';
 
 // Create Fastify instance
 const app: FastifyInstance = Fastify({
@@ -76,9 +78,9 @@ async function registerPlugins(): Promise<void> {
 
   // CORS
   await app.register(cors, {
-    origin: true,
+    origin: env.corsOrigins.length > 0 ? env.corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-api-key'],
+    allowedHeaders: ['Content-Type', 'x-api-key', 'x-csrf-token'],
   });
 
   // Security headers
@@ -97,6 +99,49 @@ async function registerPlugins(): Promise<void> {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
     };
+  });
+
+  const dashboardRoot = path.join(__dirname, '..', 'public', 'dashboard');
+  const dashboardHeaders = {
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy':
+      "default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+  };
+
+  app.get('/dashboard', {
+    schema: { hide: true },
+  }, async (_, reply) => reply.redirect('/dashboard/'));
+
+  app.get('/dashboard/', {
+    schema: { hide: true },
+  }, async (_, reply) => {
+    const html = await readFile(path.join(dashboardRoot, 'index.html'), 'utf-8');
+    return reply
+      .headers(dashboardHeaders)
+      .header('Content-Type', 'text/html; charset=utf-8')
+      .send(html);
+  });
+
+  app.get<{ Params: { '*': string } }>('/dashboard/assets/*', {
+    schema: { hide: true },
+  }, async (request, reply) => {
+    const fileName = path.basename(request.params['*']);
+    const extension = path.extname(fileName);
+    const contentTypes: Record<string, string> = {
+      '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+    };
+    if (!fileName || !contentTypes[extension]) return reply.code(404).send();
+
+    const asset = await readFile(path.join(dashboardRoot, 'assets', fileName));
+    return reply
+      .header('Content-Type', contentTypes[extension])
+      .header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(asset);
   });
 
   // API info route
@@ -121,7 +166,7 @@ async function registerPlugins(): Promise<void> {
   }, async () => {
     return {
       name: 'VenusConnect - WhatsApp API Gateway',
-      version: '1.0.0',
+      version: '2.0.0',
       documentation: '/docs',
       openapi: '/openapi.json',
     };
@@ -162,30 +207,32 @@ async function registerPlugins(): Promise<void> {
  * Create initial admin user if not exists
  */
 async function seedDatabase(): Promise<void> {
-  try {
-    const userCount = await User.count();
+  const userCount = await User.count();
+  if (userCount > 0) return;
 
-    if (userCount === 0) {
-      const adminUser = await User.create({
-        username: env.admin.username,
-        password: env.admin.password, // Will be hashed by model hook
-        role: 'admin', // Set as admin
-      });
-
-      console.log('='.repeat(60));
-      console.log('🔐 INITIAL ADMIN USER CREATED');
-      console.log('='.repeat(60));
-      console.log(`Username: ${adminUser.username}`);
-      console.log(`Password: ${adminUser.password}`);
-      console.log(`Role:     admin`);
-      console.log(`API Key:  ${adminUser.api_key}`);
-      console.log('='.repeat(60));
-      console.log('⚠️  Please change the password after first login!');
-      console.log('='.repeat(60));
-    }
-  } catch (error) {
-    console.error('Error seeding database:', error);
+  const { username, password } = env.admin;
+  if (!username || !password) {
+    throw new Error(
+      'The database has no users. Set ADMIN_USERNAME and ADMIN_PASSWORD to create the initial admin.'
+    );
   }
+  if (password.length < 12) {
+    throw new Error('ADMIN_PASSWORD must contain at least 12 characters.');
+  }
+
+  const adminUser = await User.create({
+    username,
+    password,
+    role: 'admin',
+  });
+
+  console.log('='.repeat(60));
+  console.log('🔐 INITIAL ADMIN USER CREATED');
+  console.log('='.repeat(60));
+  console.log(`Username: ${adminUser.username}`);
+  console.log('Role:     admin');
+  console.log('The password and API key are not written to logs.');
+  console.log('='.repeat(60));
 }
 
 /**

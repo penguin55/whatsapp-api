@@ -5,13 +5,13 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist/', 'node_modules/', 'scripts/'],
+    ignores: ['**/dist/', '**/public/dashboard/', 'node_modules/', 'scripts/'],
   },
   {
-    files: ['src/**/*.ts'],
+    files: ['apps/api/src/**/*.ts'],
     languageOptions: {
       parserOptions: {
-        project: './tsconfig.json',
+        project: './apps/api/tsconfig.json',
       },
     },
     rules: {

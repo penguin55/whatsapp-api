@@ -38,7 +38,7 @@ Jika webhook URL dikonfigurasi, events berikut akan dikirim:
 - \`presence.update\` - Online/offline/typing
 
 `,
-      version: '1.0.0',
+      version: '2.0.0',
       contact: {
         name: 'VenusConnect Support',
         email: 'contact@venusverse.dev',

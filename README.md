@@ -70,8 +70,14 @@
 
 ## 🏗️ Arsitektur
 
+This repository uses npm workspaces. The backend lives in `apps/api`, the
+React/Vite frontend lives in `apps/dashboard`, and frontend production assets
+are generated into `apps/api/public/dashboard`.
+
 ```
-src/
+apps/
+├── api/
+│   └── src/
 ├── app.ts                 # Entry point aplikasi
 ├── config/                # Konfigurasi (env, database, swagger)
 ├── controllers/           # Handler endpoint API
@@ -97,7 +103,7 @@ src/
 ## 📋 Prasyarat
 
 - **Node.js** ≥ 18.0.0
-- **MySQL** 5.7+ atau **MariaDB** 10.5+
+- **PostgreSQL** 14+
 - **PM2** (untuk production)
 
 ---
@@ -126,12 +132,13 @@ PORT=3000
 HOST=0.0.0.0
 NODE_ENV=development
 
-# Database (MySQL)
+# Database (PostgreSQL)
 DB_HOST=localhost
-DB_PORT=3306
+DB_PORT=5432
 DB_NAME=whatsapp_api
-DB_USER=root
+DB_USER=app_owner
 DB_PASS=your_password
+DB_SSL=false
 
 # API Security
 API_SECRET=your-super-secret-api-key
@@ -144,11 +151,95 @@ WA_RECONNECT_INTERVAL=5000
 WA_MAX_RECONNECT_RETRIES=5
 ```
 
+To run only the shared PostgreSQL service, copy the database environment file
+and start the dedicated Compose project:
+
+```bash
+cp .env.postgres.example .env.postgres
+# Set a strong POSTGRES_PASSWORD and list the required databases.
+docker compose --env-file .env.postgres -f docker-compose.postgres.yml up -d
+```
+
+Every database in `POSTGRES_MULTIPLE_DATABASES` is owned by the single
+`POSTGRES_USER` account. Database creation runs only when the data volume is
+initialized for the first time.
+
+Other Compose projects can share this PostgreSQL container by joining the
+external `wa_gateway_network`. The database has both `postgres` and `db` network
+aliases for compatibility. For example, a separately deployed LiteLLM service
+can use:
+
+```yaml
+services:
+  litellm:
+    image: docker.litellm.ai/berriai/litellm-database:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/litellm
+    networks:
+      - gateway
+
+networks:
+  gateway:
+    name: wa_gateway_network
+    external: true
+```
+
+Do not use `depends_on` for the PostgreSQL service across separate Compose
+projects; Compose cannot resolve cross-project service dependencies. Start
+`docker-compose.postgres.yml` first, then start the LiteLLM project.
+
+### Build and publish the API image
+
+The two Compose files have separate responsibilities:
+
+- `docker-compose.postgres.yml` runs only PostgreSQL.
+- `docker-compose.yml` runs only the WhatsApp gateway image.
+
+Both services join the Docker network `wa_gateway_network`; the gateway reaches
+PostgreSQL using `DB_HOST=postgres`.
+
+On the build machine, log in to Docker Hub and publish the image:
+
+```bash
+docker login
+DOCKERHUB_USER=ariutomo IMAGE_NAME=wa_gateway_api TAG=2.0 \
+  ./build-app.sh
+```
+
+`build-app.sh` only builds and pushes the API image. It does not run Docker
+Compose or modify a server.
+
+Copy these deployment files to the server separately if you use Compose there:
+
+```text
+docker-compose.yml
+docker-compose.postgres.yml
+docker/postgres/init-multiple-databases.sh
+.env
+.env.postgres
+```
+
+Create the server environment files from `.env.docker.example` and
+`.env.postgres.example`. The `DB_USER` and `DB_PASS` values in `.env` must match
+`POSTGRES_USER` and `POSTGRES_PASSWORD` in `.env.postgres`.
+
+Pull and start the services from the server:
+
+```bash
+docker compose --file docker-compose.postgres.yml up --detach
+docker compose --file docker-compose.yml pull api
+docker compose --file docker-compose.yml up --detach api
+```
+
 ### 3. Jalankan Aplikasi
 
 ```bash
 # Development (hot-reload)
 npm run dev
+
+# React frontend development server (run in a second terminal)
+npm run dev:dashboard
 
 # Production
 npm run build
@@ -157,12 +248,12 @@ npm start
 
 ### 4. Initial Admin User
 
-Saat pertama kali dijalankan, sistem akan membuat admin user:
+Saat pertama kali dijalankan dengan tabel user kosong, sistem membuat admin dari
+environment variables berikut:
 
-```
-Username: admin
-Password: admin123
-API Key:  [auto-generated]
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-strong-password
 ```
 
 > ⚠️ **Segera ganti password default setelah login!**
@@ -469,10 +560,15 @@ Konfigurasikan `webhook_url` saat membuat sesi untuk menerima events:
     "type": "notify",
     "messages": [{
       "id": "ABC123",
-      "from": "6281234567890@s.whatsapp.net",
+      "from": "120363345675510843@g.us",
       "fromMe": false,
+      "timestamp": 1765326600,
+      "chatType": "group",
+      "mentionedJids": [
+        "83073525899438@lid"
+      ],
       "type": "text",
-      "text": "Hello!",
+      "text": "@259142019235840 hello!",
       "pushName": "John Doe"
     }]
   }
@@ -583,7 +679,10 @@ Setelah server berjalan, akses dokumentasi interaktif di:
 # Development dengan hot-reload
 npm run dev
 
-# Build TypeScript
+# React dashboard development server
+npm run dev:dashboard
+
+# Build all monorepo workspaces
 npm run build
 
 # Lint code

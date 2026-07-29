@@ -1,28 +1,24 @@
 services:
-
-  db:
-    image: mariadb:10.5
-    container_name: whatsapp_db
-    environment:
-      MYSQL_ROOT_PASSWORD: jasindoRoot
-      MYSQL_DATABASE: whatsapp_api
-      MYSQL_USER: jasindo
-      MYSQL_PASSWORD: jasindoR4153
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-      
   api:
-    image: ariutomo/whatsapp_jasindo_api:1.0
-    container_name: whatsapp_jasindo_api
+    image: ${WA_GATEWAY_IMAGE:-ariutomo/wa_gateway_api:2.0}
+    container_name: wa_gateway_api
+    restart: unless-stopped
     env_file:
       - .env
     ports:
-      - "3000:3000"
-    depends_on:
-      - db
-    restart: unless-stopped
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"
+    networks:
+      - gateway
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
-volumes:
-  db_data:
+networks:
+  gateway:
+    name: volka_gateway_network
+    external: true

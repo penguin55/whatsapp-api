@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import { sequelize } from './config/database';
 import { User } from './models/User';
+import { env } from './config/env';
 
 async function checkUser() {
   try {
@@ -13,17 +14,23 @@ async function checkUser() {
     
     if (users.length === 0) {
       console.log('➕ No users found, creating admin...');
+      if (!env.admin.username || !env.admin.password) {
+        throw new Error('Set ADMIN_USERNAME and ADMIN_PASSWORD before creating the initial admin.');
+      }
+      if (env.admin.password.length < 12) {
+        throw new Error('ADMIN_PASSWORD must contain at least 12 characters.');
+      }
       const admin = await User.create({
-        username: 'admin',
-        password: 'admin123',
+        username: env.admin.username,
+        password: env.admin.password,
+        role: 'admin',
       });
       console.log('');
       console.log('============================================================');
       console.log('🔐 ADMIN USER CREATED');
       console.log('============================================================');
-      console.log('Username: admin');
-      console.log('Password: admin123');
-      console.log(`API Key: ${admin.api_key}`);
+      console.log(`Username: ${admin.username}`);
+      console.log('Password and API key are not written to logs.');
       console.log('============================================================');
     } else {
       console.log('');
@@ -32,7 +39,6 @@ async function checkUser() {
       console.log('============================================================');
       for (const user of users) {
         console.log(`Username: ${user.username}`);
-        console.log(`API Key: ${user.api_key}`);
         console.log('------------------------------------------------------------');
       }
     }

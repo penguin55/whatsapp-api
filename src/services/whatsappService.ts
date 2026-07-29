@@ -11,6 +11,8 @@ import makeWASocket, {
   ConnectionState,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
+  jidDecode,
+  jidNormalizedUser,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { useSequelizeAuthState } from '../lib/whatsappAuth';
@@ -94,6 +96,50 @@ export function isSessionConnected(sessionId: string): boolean {
  */
 export function getSession(sessionId: string): WASocket | undefined {
   return sessions.get(sessionId);
+}
+
+function normalizeRemoteJid(remoteJid: string) {
+  const trimmed = remoteJid.trim();
+  if (!trimmed) {
+    throw new Error('Invalid remoteJid');
+  }
+
+  const normalized = trimmed.includes('@')
+    ? jidNormalizedUser(trimmed)
+    : `${trimmed.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+
+  const decoded = jidDecode(normalized);
+  if (!decoded?.user || !decoded.server) {
+    throw new Error(`Invalid remoteJid: ${remoteJid}`);
+  }
+
+  return normalized;
+}
+
+export async function markMessageRead(sessionId: string, remoteJid: string, messageId: string): Promise<void> {
+  const socket = sessions.get(sessionId);
+  if (!socket?.user) {
+    throw new Error('Session not connected');
+  }
+
+  const normalizedRemoteJid = normalizeRemoteJid(remoteJid);
+
+  await socket.readMessages([
+    {
+      remoteJid: normalizedRemoteJid,
+      id: messageId,
+      fromMe: false,
+    },
+  ]);
+}
+
+export async function sendPresence(sessionId: string, remoteJid: string, presence: 'composing' | 'paused'): Promise<void> {
+  const socket = sessions.get(sessionId);
+  if (!socket?.user) {
+    throw new Error('Session not connected');
+  }
+
+  await socket.sendPresenceUpdate(presence, normalizeRemoteJid(remoteJid));
 }
 
 /**
